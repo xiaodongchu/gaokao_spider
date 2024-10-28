@@ -1,8 +1,10 @@
-import os
 import itertools
+import os
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+
 from my_json import load_json
 from my_mongo import client, province_id, school_id
-from concurrent.futures import ThreadPoolExecutor
 
 basic_path = str(os.path.dirname(__file__)) + "/"
 map_path = basic_path + "map_new.json"
@@ -12,6 +14,23 @@ db_plan = client.gaokao.school_plan_sim
 db_school = client.gaokao.school
 cnt = 0
 pool = ThreadPoolExecutor(12)
+
+
+def get_all_subject_sort():
+    order = {"物理": 1, "历史": 2, "化学": 3, "政治": 4, "生物": 5, "地理": 6, "技术": 7}
+    subject_chooses = []
+    subject_chooses.extend(list(itertools.combinations(order.keys(), 3)))
+    subject_chooses_str = {}
+    for i in subject_chooses:
+        i = list(i)
+        i.sort(key=lambda x: order[x])
+        subject_chooses_str[''.join(i)] = i
+    return subject_chooses_str
+
+
+subject_chooses = get_all_subject_sort()
+subject_choose_copy = {k: 0 for k in subject_chooses.keys()}
+subject_choose_any = {k: 1 for k in subject_chooses.keys()}
 
 
 def subject_sort(subjects):
@@ -85,59 +104,12 @@ def get_map():
         pool.submit(get_map_help, i)
 
 
-def dict_to_choose_list(d):
-    choose_list = []
-    if d['n'] == 0:
-        choose_list.append(get_dict_by_list(d['r']))
-    elif d['n'] == 1:
-        for i in d['o']:
-            choose_list.append(get_dict_by_list(d['r'] + [i]))
-    elif d['n'] == 2:
-        t = list(itertools.combinations(d['o'], 2))
-        for i in t:
-            choose_list.append(get_dict_by_list(d['r'] + list(i)))
-    return choose_list
-
-
-def get_dict_by_list(choose_list):
-    if len(choose_list) == 0:
-        return {
-            "n": 0,
-            "choose1": "",
-            "choose2": "",
-            "choose3": ""
-        }
-    if len(choose_list) == 1:
-        return {
-            "n": 1,
-            "choose1": choose_list[0],
-            "choose2": "",
-            "choose3": ""
-        }
-    subject_sort(choose_list)
-    if len(choose_list) == 2:
-        return {
-            "n": 2,
-            "choose1": choose_list[0],
-            "choose2": choose_list[1],
-            "choose3": ""
-        }
-    if len(choose_list) == 3:
-        return {
-            "n": 3,
-            "choose1": choose_list[0],
-            "choose2": choose_list[1],
-            "choose3": choose_list[2]
-        }
-
-
 def get_map_help(result_i):
     global cnt
     try:
         min_rank = int(result_i["max_section"])
         if min_rank < 1:
             return
-        add_list = []
         cnt += 1
         school = db_school.find_one({"school_id": result_i["school_id"]})
         d = {
@@ -155,26 +127,14 @@ def get_map_help(result_i):
         }
         if result_i["type_id"] == "1":
             d["sk_info"] = "理科"
-            d.update(get_dict_by_list(["物理", "化学", "生物"]))
-            add_list.append(d)
+            d["物理化学生物"] = 1
         elif result_i["type_id"] == "2":
             d["sk_info"] = "文科"
-            d.update(get_dict_by_list(["历史", "政治", "地理"]))
-            add_list.append(d)
+            d["历史政治地理"] = 1
         elif "sg_info" in result_i and result_i["sg_info"] and result_i["sg_info"] in map_new:
-            d["sk_info"] = result_i["sg_info"]
-            choose_list = dict_to_choose_list(map_new[result_i["sg_info"]])
-            for j in choose_list:
-                add_list.append(d.copy())
-                add_list[-1].update(j)
+            d.update(check_choose(map_new[result_i["sg_info"]]))
         else:
-            d.update({
-                "n": 0,
-                "choose1": "",
-                "choose2": "",
-                "choose3": ""
-            })
-            add_list.append(d)
+            d.update(subject_choose_any)
         db_plan.update_many(
             {
                 "special_id": result_i["special_id"],
@@ -184,11 +144,29 @@ def get_map_help(result_i):
             {"$set": {"finish_map": 1}}
         )
         print(str(cnt) + " " + result_i["school_id"] + " " + result_i["province_id"] + " " + result_i["special_id"])
-        db.insert_many(add_list)
+        db.insert_one(d)
     except Exception as e:
-        print(str(e)+str(result_i))
+        print(str(e) + str(result_i))
+
+
+def check_choose(require_dict):
+    all_choose = deepcopy(subject_choose_copy)
+    for k, v in subject_chooses.items():
+        all_choose[k] = check_choose_help(require_dict, v)
+    return all_choose
+
+
+def check_choose_help(require_dict, choose_list):
+    if not all(i in choose_list for i in require_dict['r']):
+        return 0
+    if require_dict['n'] > 0 and len(set(require_dict['o']) & set(choose_list)) < require_dict['n']:
+        return 0
+    return 1
 
 
 if __name__ == "__main__":
-    get_map_json()
+    # db_plan.update_many(
+    #     {},
+    #     {"$set": {"finish_map": 0}}
+    # )
     get_map()

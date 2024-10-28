@@ -164,7 +164,7 @@ class school_grade_special_url:
         "year": 2024,
     }
     mata = "http://static-data.gaokao.cn/www/2.0/school/{school_id}/dic/specialscore.json"
-    url = r"http://api.zjzw.cn/web/api/"
+    url = r"https://api.zjzw.cn/web/api/"
     url_before_2022 = "http://static-data.gaokao.cn/www/2.0/schoolspecialscore/{schoolid}/{year}/{provinceid}.json"
 
     def mata_to_string(self, school_id):
@@ -197,7 +197,7 @@ class school_plan_url:
         "year": 2024,
     }
     mata = "http://static-data.gaokao.cn/www/2.0/school/{school_id}/dic/specialplan.json"
-    url = r"http://api.zjzw.cn/web/api/"
+    url = r"https://api.zjzw.cn/web/api/"
     url_before_2023 = "http://static-data.gaokao.cn/www/2.0/schoolspecialplan/{schoolid}/{year}/{provinceid}.json"
 
     def mata_to_string(self, school_id):
@@ -233,7 +233,7 @@ class school_province_grade_url:
         "uri": "apidata/api/gkv3/plan/school",
         "year": 2024,
     }
-    url = r"http://api.zjzw.cn/web/api/"
+    url = r"https://api.zjzw.cn/web/api/"
     mata = "http://static-data.gaokao.cn/www/2.0/school/{school_id}/dic/provincescore.json"
     url_before_2022 = "http://static-data.gaokao.cn/www/2.0/schoolprovincescore/{schoolid}/{year}/{provinceid}.json"
 

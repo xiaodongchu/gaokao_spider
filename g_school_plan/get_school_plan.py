@@ -1,6 +1,6 @@
 import os
 
-from get_api import get_api_data
+from get_api import get_api_data, get_proxy, proxy_set
 from my_json import download_json, bulid_download_path, clean_dict
 from my_mongo import client, school_id, get_id_dict, province_id
 from spider_url import school_plan_url
@@ -111,39 +111,52 @@ def school_plan_2023(school1, province1, years):
 
 
 def get_school_plan(school1):
-    print(school1)
-    years = get_year(school1)
-    for i in years:
-        if int(i["year"]) < 2024 or db.find_one(i):
-            continue
-        file_name = download_path + "school_plan_" + school1 + "_" + i["province_id"] + "_" + i["year"] + "_" + i[
-            "type_id"] + "_" + i["batch_id"] + ".json"
-        params = url.get_params(i["school_id"], i["province_id"], i["year"], i["type_id"], i["batch_id"])
-        school0 = get_api_data(file_name, url.url, params, i)
-        for j in school0:
-            j["special_id"] = str(j["spcode"])
-            d = {
-                "school_id": school1,
-                "province_id": i["province_id"],
-                "year": i["year"],
-                "special_id": j["special_id"],
-                "type_id": i["type_id"],
-                "batch_id": i["batch_id"],
-            }
-            d1 = clean_dict(j)
-            db.update_one(d, {"$set": d1}, upsert=True)
-        print("inserted " + str(i))
+    try:
+        proxy = get_proxy()
+        print(school1)
+        years = get_year(school1)
+        for i in years:
+            if int(i["year"]) < 2024 or db.find_one(i):
+                continue
+            file_name = download_path + "school_plan_" + school1 + "_" + i["province_id"] + "_" + i["year"] + "_" + i[
+                "type_id"] + "_" + i["batch_id"] + ".json"
+            params = url.get_params(i["school_id"], i["province_id"], i["year"], i["type_id"], i["batch_id"])
+            school0 = get_api_data(file_name, url.url, params, i, proxy)
+            if not school0:
+                continue
+            proxy = school0["proxy"]
+            school0 = school0["data"]
+            for j in school0:
+                if "special_id" not in j:
+                    if "spcode" in j:
+                        j["special_id"] = str(j["spcode"])
+                    else:
+                        j["special_id"] = str(j["spname"])
+                d = {
+                    "school_id": school1,
+                    "province_id": i["province_id"],
+                    "year": i["year"],
+                    "special_id": j["special_id"],
+                    "type_id": i["type_id"],
+                    "batch_id": i["batch_id"],
+                }
+                d1 = clean_dict(j)
+                db.update_one(d, {"$set": d1}, upsert=True)
+            print("inserted " + str(i))
+        proxy_set.remove(proxy)
+        print("remove " + proxy)
+    except Exception as e:
+        print(e)
 
 
 if __name__ == "__main__":
-    # from concurrent.futures import ThreadPoolExecutor
-    # pool = ThreadPoolExecutor(16)
+    from concurrent.futures import ThreadPoolExecutor
+    pool = ThreadPoolExecutor(16)
     db_school = client.gaokao.school
     for school1 in school_id.keys():
-        # init_before_2023(school1)
+        # pool.submit(init_before_2023, school1)
         school2 = db_school.find_one({"school_id": school1})
         if not school2 or not school2.get("f985", 0) == '1':
             continue
-        print(school2['name'])
-        get_school_plan(school1)
-    # pool.shutdown()
+        print(school1 + school2['name'])
+        pool.submit(get_school_plan, school1)
