@@ -1,0 +1,16 @@
+.idea
+venv
+*.exe
+*.json
+temp
+temp.*
+__pycache__
+*.txt
+*.pyc
+*.png
+*.jpg
+*.csv
+*.zip
+*.7z
+!simer/map_new.json
+/proxy_pool/
