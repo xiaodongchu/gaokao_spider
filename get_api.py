@@ -129,17 +129,23 @@ def get_api_data(file_path, url, url_params, add_dict={}, proxy=None):
         return None
 
 
-def get_proxy():
+def get_proxy(i=0):
     try:
         proxy = requests.get("http://127.0.0.1:5010/get/?type=https").json().get("proxy")
         while proxy in proxy_set:
-            sleep(random())
+            sleep(random()* 10)
+            i += 1
+            if i > 5:
+                return None
             proxy = requests.get("http://127.0.0.1:5010/get/?type=https").json().get("proxy")
         proxy_set.add(proxy)
         print(proxy)
     except:
+        i += 1
+        if i > 5:
+            return None
         sleep(random() * 10)
-        return get_proxy()
+        return get_proxy(i)
     return proxy
 
 

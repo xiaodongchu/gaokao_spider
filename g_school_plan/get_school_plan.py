@@ -149,9 +149,9 @@ def get_school_plan(school1):
         print(e)
 
 
-if __name__ == "__main__":
-    from concurrent.futures import ThreadPoolExecutor
-    pool = ThreadPoolExecutor(16)
+def run_in_pool():
+    # from concurrent.futures import ThreadPoolExecutor
+    # pool = ThreadPoolExecutor(4)
     db_school = client.gaokao.school
     for school1 in school_id.keys():
         # pool.submit(init_before_2023, school1)
@@ -159,4 +159,9 @@ if __name__ == "__main__":
         if not school2 or not school2.get("f985", 0) == '1':
             continue
         print(school1 + school2['name'])
-        pool.submit(get_school_plan, school1)
+        get_school_plan(school1)
+        # pool.submit(get_school_plan, school1)
+
+
+if __name__ == "__main__":
+    run_in_pool()

@@ -1,7 +1,7 @@
 import itertools
 import os
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Thread
 
 from my_json import load_json
 from my_mongo import client, province_id, school_id
@@ -9,11 +9,9 @@ from my_mongo import client, province_id, school_id
 basic_path = str(os.path.dirname(__file__)) + "/"
 map_path = basic_path + "map_new.json"
 map_new = load_json(map_path)
-db = client.gaokao.school_special_index
+db = client.gaokao.school_plan_index
 db_plan = client.gaokao.school_plan_sim
 db_school = client.gaokao.school
-cnt = 0
-pool = ThreadPoolExecutor(12)
 
 
 def get_all_subject_sort():
@@ -48,15 +46,13 @@ def get_map_json():
             raise ValueError()
 
 
-def get_map():
+def get_pipline():
     pipeline = [
         {
             "$match": {
-                "$or": [
-                    {"finish_map": {"$exists": False}},
-                    {"finish_map": {"$ne": 1}}
-                ],
-                "min_section": {"$exists": True, "$regex": "^\\d+$"}
+                "min_section": {"$exists": True, "$regex": "^\\d+$"},
+                "spname": {"$exists": True, "$ne": None},
+                "level3": {"$exists": True, "$ne": None},
             }
         },
         {
@@ -66,7 +62,7 @@ def get_map():
         },
         {
             "$match": {
-                "min_section_int": {"$exists": True, "$ne": None}
+                "min_section_int": {"$exists": True, "$ne": None, "$gt": 1}
             }
         },
         {
@@ -77,76 +73,92 @@ def get_map():
         {
             "$group": {
                 "_id": {
-                    "special_id": "$special_id",
+                    "level3": "$level3",
                     "school_id": "$school_id",
                     "province_id": "$province_id",
                 },
-                "max_section": {"$max": "$min_section_int"},
-                "spname": {"$first": "$spname"},
+                "max_section": {"$avg": "$min_section_int"},
+                "level3_name": {"$first": "$level3_name"},
                 "sg_info": {"$first": "$sg_info"},
+                "year_max": {"$max": "$year"},
+                "batch_id": {"$first": "$batch_id"},
                 "type_id": {"$first": "$type_id"},
             }
         },
         {
             "$project": {
-                "special_id": "$_id.special_id",
+                "_id": 0,
+                "level3": "$_id.level3",
                 "school_id": "$_id.school_id",
                 "province_id": "$_id.province_id",
                 "max_section": 1,
-                "spname": 1,
+                "level3_name": 1,
                 "sg_info": 1,
+                "year_max": 1,
                 "type_id": 1,
             }
-        }
+        },
+        {
+            "$sort": {
+                "year_max": -1,
+                "max_section": 1,
+                "school_id": 1,
+            }
+        },
     ]
-    result = db_plan.aggregate(pipeline, maxTimeMS=600000)
-    for i in result:
-        pool.submit(get_map_help, i)
+    result = list(db_plan.aggregate(pipeline, maxTimeMS=600000))
+    return result
 
 
-def get_map_help(result_i):
-    global cnt
-    try:
-        min_rank = int(result_i["max_section"])
-        if min_rank < 1:
-            return
-        cnt += 1
-        school = db_school.find_one({"school_id": result_i["school_id"]})
-        d = {
-            "province_name": province_id[result_i["province_id"]],
-            "school_name": school_id[result_i["school_id"]],
-            "province_id": result_i["province_id"],
-            "school_id": result_i["school_id"],
-            "min_rank": min_rank,
-            "special_name": result_i["spname"],
-            "special_id": result_i["special_id"],
-            "school_province": school.get("province_id", ""),
-            "is_dual_class": school.get("dual_class", 0),
-            "is_985": school.get("f_985", 0),
-            "is_211": school.get("f_211", 0),
-        }
-        if result_i["type_id"] == "1":
-            d["sk_info"] = "理科"
-            d["物理化学生物"] = 1
-        elif result_i["type_id"] == "2":
-            d["sk_info"] = "文科"
-            d["历史政治地理"] = 1
-        elif "sg_info" in result_i and result_i["sg_info"] and result_i["sg_info"] in map_new:
-            d.update(check_choose(map_new[result_i["sg_info"]]))
-        else:
-            d.update(subject_choose_any)
-        db_plan.update_many(
-            {
-                "special_id": result_i["special_id"],
+def get_map_help(result_list, insert_num=100):
+    cnt = 0
+    insert_list = []
+    for result_i in result_list:
+        try:
+            d = {
                 "school_id": result_i["school_id"],
                 "province_id": result_i["province_id"],
-            },
-            {"$set": {"finish_map": 1}}
-        )
-        print(str(cnt) + " " + result_i["school_id"] + " " + result_i["province_id"] + " " + result_i["special_id"])
-        db.insert_one(d)
-    except Exception as e:
-        print(str(e) + str(result_i))
+                "level3": result_i["level3"],
+                "year_max": int(result_i["year_max"]),
+            }
+            if db.find_one(d):
+                continue
+            cnt += 1
+            school = db_school.find_one({"school_id": result_i["school_id"]})
+            d = {
+                "province_name": province_id[result_i["province_id"]],
+                "school_name": school_id[result_i["school_id"]],
+                "province_id": result_i["province_id"],
+                "school_id": result_i["school_id"],
+                "min_rank": int(result_i["max_section"]),
+                "level3_name": result_i["level3_name"],
+                "level3": result_i["level3"],
+                "year_max": int(result_i["year_max"]),
+                "school_province": school.get("province_id", ""),
+                "is_dual_class": school.get("dual_class", 0),
+                "is_985": school.get("f985", 0),
+                "is_211": school.get("f211", 0),
+            }
+            if result_i["type_id"] == "1":
+                d["sk_info"] = "理科"
+                d["物理化学生物"] = 1
+            elif result_i["type_id"] == "2":
+                d["sk_info"] = "文科"
+                d["历史政治地理"] = 1
+            elif "sg_info" in result_i and result_i["sg_info"] and result_i["sg_info"] in map_new:
+                d.update(check_choose(map_new[result_i["sg_info"]]))
+                d["sk_info"] = result_i["sg_info"]
+            else:
+                d.update(subject_choose_any)
+            insert_list.append(d)
+            if len(insert_list) >= insert_num:
+                db.insert_many(deepcopy(insert_list))
+                print("insert" + str(cnt))
+                insert_list = []
+        except Exception as e:
+            print(str(e) + str(result_i))
+    if insert_list:
+        db.insert_many(deepcopy(insert_list))
 
 
 def check_choose(require_dict):
@@ -164,9 +176,45 @@ def check_choose_help(require_dict, choose_list):
     return 1
 
 
+def run_in_pool():
+    result = get_pipline()
+    result_len = len(result)
+    print(result_len)
+    pool_num = 16
+    result_len = result_len // pool_num
+    thread_list = []
+    result_new = []
+    for i in range(pool_num - 1):
+        result_new.append(deepcopy(result[i * result_len: (i + 1) * result_len]))
+    result_new.append(deepcopy(result[(pool_num - 1) * result_len:]))
+    result = None
+    for result_i in result_new:
+        t = Thread(target=get_map_help, args=(result_i,))
+        thread_list.append(t)
+    for t in thread_list:
+        t.start()
+    for t in thread_list:
+        t.join()
+
+
+def my_create_index():
+    db.create_index(
+        [
+            ("year_max", -1),
+            ("province_id", 1),
+            ("school_id", 1),
+            ("level3", 1),
+        ]
+    )
+    db.create_index(
+        [
+            ("school_id", 1),
+            ("province_id", 1),
+            ("min_rank", 1),
+        ]
+    )
+
+
 if __name__ == "__main__":
-    # db_plan.update_many(
-    #     {},
-    #     {"$set": {"finish_map": 0}}
-    # )
-    get_map()
+    my_create_index()
+    run_in_pool()

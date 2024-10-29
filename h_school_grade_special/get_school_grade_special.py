@@ -106,7 +106,8 @@ def get_school_grade_special(school1):
         for i in years:
             if int(i["year"]) < 2023 or db.find_one(i):
                 continue
-            file_name = download_path + "school_grade_special_" + school1 + "_" + i["province_id"] + "_" + i["year"] + "_" + \
+            file_name = download_path + "school_grade_special_" + school1 + "_" + i["province_id"] + "_" + i[
+                "year"] + "_" + \
                         i["type_id"] + "_" + i["batch_id"] + ".json"
             params = url.get_params(i["school_id"], i["province_id"], i["year"], i["type_id"], i["batch_id"])
             school0 = get_api_data(file_name, url.url, params, i, proxy)
@@ -138,9 +139,9 @@ def get_school_grade_special(school1):
         print(e)
 
 
-if __name__ == "__main__":
-    from concurrent.futures import ThreadPoolExecutor
-    pool = ThreadPoolExecutor(16)
+def run_in_pool():
+    # from concurrent.futures import ThreadPoolExecutor
+    # pool = ThreadPoolExecutor(4)
     db_school = client.gaokao.school
     for school1 in school_id.keys():
         # pool.submit(init_before_2022, school1)
@@ -149,4 +150,8 @@ if __name__ == "__main__":
             continue
         print(school1 + school2['name'])
         get_school_grade_special(school1)
-        #pool.submit(get_school_grade_special, school1)
+        # pool.submit(get_school_grade_special, school1)
+
+
+if __name__ == "__main__":
+    run_in_pool()

@@ -3,6 +3,7 @@ venv
 *.exe
 *.json
 temp
+temp*.*
 temp.*
 __pycache__
 *.txt
